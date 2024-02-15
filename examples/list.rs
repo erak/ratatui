@@ -13,15 +13,20 @@
 //! [examples]: https://github.com/ratatui-org/ratatui/blob/main/examples
 //! [examples readme]: https://github.com/ratatui-org/ratatui/blob/main/examples/README.md
 
-use std::{error::Error, io, io::stdout};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+use std::{error::Error, io};
 
+use anyhow::Result;
 use color_eyre::config::HookBuilder;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
 use ratatui::{prelude::*, style::palette::tailwind, widgets::*};
+use termion::event::Key;
+use termion::input::TermRead;
+use termion::{
+    event::Event,
+    raw::{IntoRawMode, RawTerminal},
+};
 
 const TODO_HEADER_BG: Color = tailwind::BLUE.c950;
 const NORMAL_ROW_COLOR: Color = tailwind::SLATE.c950;
@@ -29,6 +34,8 @@ const ALT_ROW_COLOR: Color = tailwind::SLATE.c900;
 const SELECTED_STYLE_FG: Color = tailwind::BLUE.c300;
 const TEXT_COLOR: Color = tailwind::SLATE.c200;
 const COMPLETED_TEXT_COLOR: Color = tailwind::GREEN.c500;
+
+type Backend = TermionBackend<RawTerminal<io::Stdout>>;
 
 #[derive(Copy, Clone)]
 enum Status {
@@ -86,17 +93,20 @@ fn init_error_hooks() -> color_eyre::Result<()> {
     Ok(())
 }
 
-fn init_terminal() -> color_eyre::Result<Terminal<impl Backend>> {
-    enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout());
-    let terminal = Terminal::new(backend)?;
-    Ok(terminal)
+fn init_terminal() -> color_eyre::Result<Terminal<Backend>> {
+    let stdout = io::stdout().into_raw_mode()?;
+
+    let options = TerminalOptions {
+        viewport: Viewport::Inline(20),
+    };
+
+    Ok(Terminal::with_options(
+        TermionBackend::new(stdout),
+        options,
+    )?)
 }
 
 fn restore_terminal() -> color_eyre::Result<()> {
-    disable_raw_mode()?;
-    stdout().execute(LeaveAlternateScreen)?;
     Ok(())
 }
 
@@ -134,29 +144,31 @@ impl App<'_> {
 }
 
 impl App<'_> {
-    fn run(&mut self, mut terminal: Terminal<impl Backend>) -> io::Result<()> {
+    fn run(&mut self, mut terminal: Terminal<Backend>) -> Result<()> {
+        let events = events(Duration::from_millis(250));
         loop {
             self.draw(&mut terminal)?;
 
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    use KeyCode::*;
-                    match key.code {
-                        Char('q') | Esc => return Ok(()),
-                        Char('h') | Left => self.items.unselect(),
-                        Char('j') | Down => self.items.next(),
-                        Char('k') | Up => self.items.previous(),
-                        Char('l') | Right | Enter => self.change_status(),
-                        Char('g') => self.go_top(),
-                        Char('G') => self.go_bottom(),
-                        _ => {}
-                    }
+            if let Event::Key(key) = events.recv()? {
+                match key {
+                    Key::Char('q') | Key::Esc => return Ok(()),
+                    Key::Char('h') | Key::Left => self.items.unselect(),
+                    Key::Char('j') | Key::Down => self.items.next(),
+                    Key::Char('k') | Key::Up => self.items.previous(),
+                    Key::Char('l')
+                    | Key::Right
+                    | Key::Alt('\n')
+                    | Key::Char('\n')
+                    | Key::Ctrl('\n') => self.change_status(),
+                    Key::Char('g') => self.go_top(),
+                    Key::Char('G') => self.go_bottom(),
+                    _ => {}
                 }
             }
         }
     }
 
-    fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> io::Result<()> {
+    fn draw(&mut self, terminal: &mut Terminal<Backend>) -> io::Result<()> {
         terminal.draw(|f| f.render_widget(self, f.size()))?;
         Ok(())
     }
@@ -359,4 +371,19 @@ impl<'a> From<&(&'a str, &'a str, Status)> for TodoItem<'a> {
             status: *status,
         }
     }
+}
+
+fn events(_tick_rate: Duration) -> mpsc::Receiver<Event> {
+    let (tx, rx) = mpsc::channel();
+    let keys_tx = tx.clone();
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for key in stdin.keys().flatten() {
+            if let Err(err) = keys_tx.send(Event::Key(key)) {
+                eprintln!("{err}");
+                return;
+            }
+        }
+    });
+    rx
 }
