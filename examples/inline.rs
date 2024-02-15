@@ -25,13 +25,17 @@ use std::{
 use rand::distributions::{Distribution, Uniform};
 use ratatui::{prelude::*, widgets::*};
 
+use termion::{input::MouseTerminal, raw::IntoRawMode};
+// use termion::input::MouseTerminal;
+
 const NUM_DOWNLOADS: usize = 10;
 
 type DownloadId = usize;
 type WorkerId = usize;
 
+#[allow(dead_code)]
 enum Event {
-    Input(crossterm::event::KeyEvent),
+    Input(termion::event::Key),
     Tick,
     Resize,
     DownloadUpdate(WorkerId, DownloadId, f64),
@@ -79,9 +83,14 @@ struct Worker {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    crossterm::terminal::enable_raw_mode()?;
-    let stdout = io::stdout();
-    let backend = CrosstermBackend::new(stdout);
+    // termion::terminal::enable_raw_mode()?;
+    // let stdout = io::stdout();
+    // let backend = CrosstermBackend::new(stdout);
+    let stdout = io::stdout()
+        .into_raw_mode()
+        .unwrap();
+    let stdout = MouseTerminal::from(stdout);
+    let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::with_options(
         backend,
         TerminalOptions {
@@ -101,7 +110,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     run_app(&mut terminal, workers, downloads, rx)?;
 
-    crossterm::terminal::disable_raw_mode()?;
+    // crossterm::terminal::disable_raw_mode()?;
     terminal.clear()?;
 
     Ok(())
@@ -113,14 +122,14 @@ fn input_handling(tx: mpsc::Sender<Event>) {
         let mut last_tick = Instant::now();
         loop {
             // poll for tick rate duration, if no events, sent tick event.
-            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            if crossterm::event::poll(timeout).unwrap() {
-                match crossterm::event::read().unwrap() {
-                    crossterm::event::Event::Key(key) => tx.send(Event::Input(key)).unwrap(),
-                    crossterm::event::Event::Resize(_, _) => tx.send(Event::Resize).unwrap(),
-                    _ => {}
-                };
-            }
+            // let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+            // if termion::event::poll(timeout).unwrap() {
+            //     match crossterm::event::read().unwrap() {
+            //         crossterm::event::Event::Key(key) => tx.send(Event::Input(key)).unwrap(),
+            //         crossterm::event::Event::Resize(_, _) => tx.send(Event::Resize).unwrap(),
+            //         _ => {}
+            //     };
+            // }
             if last_tick.elapsed() >= tick_rate {
                 tx.send(Event::Tick).unwrap();
                 last_tick = Instant::now();
@@ -183,7 +192,7 @@ fn run_app<B: Backend>(
 
         match rx.recv()? {
             Event::Input(event) => {
-                if event.code == crossterm::event::KeyCode::Char('q') {
+                if event == termion::event::Key::Char('q') {
                     break;
                 }
             }

@@ -12,14 +12,20 @@ use crate::{app::App, ui};
 
 pub fn run(tick_rate: Duration, enhanced_graphics: bool) -> Result<(), Box<dyn Error>> {
     // setup terminal
-    let stdout = io::stdout()
-        .into_raw_mode()
-        .unwrap()
-        .into_alternate_screen()
-        .unwrap();
+    // let stdout = io::stdout()
+    //     .into_raw_mode()
+    //     .unwrap()
+    //     .into_alternate_screen()
+    //     .unwrap();
+    let stdout = io::stdout().into_raw_mode().unwrap();
     let stdout = MouseTerminal::from(stdout);
     let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::with_options(
+        backend,
+        TerminalOptions {
+            viewport: Viewport::Inline(30),
+        },
+    )?;
 
     // create app and run it
     let app = App::new("Termion demo", enhanced_graphics);

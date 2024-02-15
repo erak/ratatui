@@ -67,7 +67,7 @@ serde_json = "1.0.109"
 ## By default, we enable the crossterm backend as this is a reasonable choice for most applications
 ## as it is supported on Linux/Mac/Windows systems. We also enable the `underline-color` feature
 ## which allows you to set the underline color of text.
-default = ["crossterm", "underline-color"]
+default = ["termion", "underline-color"]
 #! Generally an application will only use one backend, so you should only enable one of the following features:
 ## enables the [`CrosstermBackend`] backend and adds a dependency on the [Crossterm crate].
 crossterm = ["dep:crossterm"]
@@ -230,7 +230,7 @@ doc-scrape-examples = true
 
 [[example]]
 name = "list"
-required-features = ["crossterm"]
+required-features = ["termion"]
 doc-scrape-examples = true
 
 [[example]]
@@ -286,7 +286,7 @@ doc-scrape-examples = true
 
 [[example]]
 name = "inline"
-required-features = ["crossterm"]
+required-features = ["termion"]
 doc-scrape-examples = true
 
 [[test]]
